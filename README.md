@@ -1,18 +1,32 @@
 # OmniGraph
 
-OmniGraph is a hackathon-ready autonomous enterprise data orchestrator for dark data. It generates isolated ETL candidates with Gemini, validates them in a restricted subprocess, writes supply-chain entities into Neo4j, and ranks graph nodes by operational risk using a small CPU-friendly GNN.
+OmniGraph is your next-generation dark-data engine: a polished, autonomous data orchestrator built to mine hidden value from legacy sources, turn it into actionable supply-chain insight, and score risk in real time.
 
-## Layout
+This repo is a complete product prototype with:
+- AI-powered ETL candidate generation
+- secure sandbox validation for generated code
+- graph-native Neo4j ingestion
+- operational risk ranking through a compact GNN
+
+## Why it matters
+
+OmniGraph isn't just another data pipeline. It is a living platform that:
+- turns messy, unstructured inputs into structured graph entities
+- isolates untrusted ETL logic safely before it ever touches production data
+- makes supply-chain risk visible through a ranked knowledge graph
+- runs fully offline with a demo mode, so you can build without cloud lock-in
+
+## Project layout
 
 ```text
-app/                  Streamlit product UI
-src/omnigraph/        Backend modules
-  agent_core.py       Multi-agent ETL workflow and secure test sandbox
-  graph_builder.py    Neo4j ingestion and natural-language graph querying
-  analytics.py        Lightweight PyTorch graph-risk model
-scripts/              Developer utilities
-data/raw/             Generated dark-data inputs (ignored by Git)
-tests/                Unit-test home
+app/                  Streamlit product experience
+src/omnigraph/        core backend engine
+  agent_core.py       autonomous ETL workflow + safe test sandbox
+  graph_builder.py    Neo4j graph ingestion + natural-language graph query layer
+  analytics.py        lightweight PyTorch risk model for graph nodes
+scripts/              build and test helpers
+data/raw/             synthetic dark-data inputs for demos
+tests/                automated unit tests
 ```
 
 ## Quick start
@@ -25,38 +39,43 @@ python scripts/mock_data_generator.py
 streamlit run app/streamlit_app.py
 ```
 
-## Customer web platform (recommended)
+Open the Streamlit app and explore the full offline demo experience instantly.
 
-The React platform is the primary customer-facing experience. Start the API from
-the repository root, then start the frontend in a second terminal:
+## Recommended platform setup
 
+For the full customer-facing stack, run the API and frontend together.
+
+In one terminal:
 ```powershell
 $env:PYTHONPATH="$PWD\src"
 uvicorn omnigraph.api:app --reload
 ```
 
+In another terminal:
 ```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The API documentation is available at
-`http://127.0.0.1:8000/docs`.
+Then visit `http://localhost:5173`.
 
-The app starts in a fully working, no-cost offline demo mode. Copy `.env.example` to `.env` only when you want to enable the optional Gemini and Neo4j paths.
+API docs are available at `http://127.0.0.1:8000/docs`.
 
-## Optional Gemini connection
+## Gemini & Neo4j (optional)
 
-Create an API key in Google AI Studio and add it as `GOOGLE_API_KEY` in `.env`.
-The current SDK also accepts `GEMINI_API_KEY`. The cloud ETL path uses the model
-in `GEMINI_MODEL`; if your account has no available Gemini quota, leave the key
-blank and use the offline demo instead.
+Want cloud AI or graph persistence? Enable these only when you're ready.
 
-## Optional Neo4j connection
+- `GOOGLE_API_KEY` or `GEMINI_API_KEY` powers Gemini-based ETL generation.
+- `GEMINI_MODEL` selects the cloud model.
+- `NEO4J_URI`, `NEO4J_USERNAME`, and `NEO4J_PASSWORD` connect the graph database.
 
-Install Neo4j Community, start it, then open `http://localhost:7474`. Sign in as `neo4j`; the first-run screen asks you to choose a password. Put that exact password in `NEO4J_PASSWORD` - `change-me` was only a placeholder, never a real credential. Keep `NEO4J_URI=bolt://localhost:7687` and `NEO4J_USERNAME=neo4j`.
+## Security-first design
 
-## Security model
+OmniGraph is built with a safe execution mindset:
+- generated ETL code never receives secrets or the full app environment
+- `agent_core.py` blocks unsafe imports and dangerous runtime calls
+- candidate scripts are executed only in an isolated subprocess against a temporary sample input
+- a short timeout prevents runaway execution
 
-Generated ETL code never receives secrets or the full application environment. `agent_core.py` statically rejects dangerous imports/calls, then executes only the candidate script against a temporary copy of one input using an isolated Python interpreter and a short timeout. Container/VM isolation should be added before accepting arbitrary untrusted model output in production.
+> This is a prototype security model. For production, add container or VM isolation before running arbitrary generated code.
