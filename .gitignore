@@ -1,6 +1,7 @@
 # 1. Environment Variables & Secrets (CRITICAL)
 .env
 .env.local
+.env.example
 *.pem
 
 # 2. Tooling Caches & Hidden State Folders
