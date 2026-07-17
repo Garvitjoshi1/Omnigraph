@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --forest: 8 28 23; --panel: 19 42 35; --line: 43 74 63; --mint: 145 217 178; --muted: 139 161 151; --critical: 255 107 107; --warning: 255 169 77; }
+[data-theme="light"] { --forest: 239 247 242; --panel: 255 255 255; --line: 198 220 209; --mint: 20 116 79; --muted: 78 103 91; --critical: 204 69 69; --warning: 189 105 21; }
+@layer base { body { @apply m-0 min-w-[320px] bg-forest font-sans text-white antialiased; } button,input { font:inherit; } }
+@layer components { .card { @apply rounded-2xl border border-line bg-panel; } .eyebrow { @apply mb-2 text-[10px] font-bold tracking-[.17em] text-mint; } .node-label { @apply block text-[9px] uppercase tracking-wider text-muted; } }
+.react-flow__attribution { display: none; }
+.react-flow__handle { opacity: 0; }
+.react-flow__edge-path { stroke: #5e927b; stroke-width: 1.25; stroke-dasharray: 6 5; animation: dash 1.7s linear infinite; }
+[data-theme="light"] .app-shell { background: radial-gradient(circle at 80% 0%, rgba(183,224,202,.72), transparent 33%), rgb(var(--forest)); color: #15251e; }
+[data-theme="light"] .text-white { color: #15251e; }
+[data-theme="light"] .react-flow { background: #f5fbf7; }
+[data-theme="light"] .react-flow__controls button { background: #fff; color: #15251e; border-color: rgb(var(--line)); }
+[data-theme="light"] .bg-\[\#0b1915\], [data-theme="light"] .bg-\[\#0a1915\] { background-color: #f5fbf7; }
+@keyframes dash { to { stroke-dashoffset: -20; } }

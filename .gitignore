@@ -1,0 +1,25 @@
+# 1. Environment Variables & Secrets (CRITICAL)
+.env
+.env.local
+*.pem
+
+# 2. Tooling Caches & Hidden State Folders
+.agents/
+.codex/
+.pnpm-store/
+
+# 3. Python Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# 4. Generated Outputs & Temporary Working Directories
+outputs/
+work/
+
+# 5. Raw/Mock Data (Optional but Recommended)
+data/raw/*.json
+data/raw/*.sqlite
+data/raw/*.pdf
+!data/raw/.gitkeep
