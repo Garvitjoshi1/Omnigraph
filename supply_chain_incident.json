@@ -1,0 +1,17 @@
+[
+  {
+    "event_id": "EVT-8821",
+    "source": "Logistics Dispatch Logs",
+    "text": "FabTech Microelectronics facility in Taiwan experienced a major power outage and factory fire on July 10. All production lines for SemiChip-AX9 components are halted indefinitely."
+  },
+  {
+    "event_id": "EVT-8822",
+    "source": "Shipment Tracker",
+    "text": "Shipment SHP-009 containing SemiChip-AX9 units is delayed by 45 days at Customs due to missing export documentation from FabTech Microelectronics."
+  },
+  {
+    "event_id": "EVT-8823",
+    "source": "Bill of Materials Database",
+    "text": "Autobahn Motors builds Model-V Electric SUV. Assembly of Model-V requires Control Module CM-40, which exclusively depends on SemiChip-AX9 supplied by FabTech Microelectronics."
+  }
+]

@@ -1,89 +1,1038 @@
-import { memo, useState, type ReactNode } from "react";
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type NodeProps } from "@xyflow/react";
+import { memo, useState, useEffect, type ReactNode } from "react";
+import {
+  Background,
+  Controls,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type NodeProps,
+  type Node as FlowNode,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { motion } from "framer-motion";
-import { Activity, AlertTriangle, Bolt, Box, Database, FileText, Network, Search, ShieldAlert, Slack, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Activity,
+  Database,
+  Network,
+  ShieldAlert,
+  Search,
+  Lock,
+  User,
+  LogOut,
+  ArrowRight,
+  Sliders,
+  Maximize2,
+  Terminal,
+  UploadCloud,
+  FileText,
+  Layers,
+  ChevronUp,
+  ChevronDown,
+  X,
+  Copy,
+  Sparkles,
+  RefreshCw,
+  Mail,
+  Send,
+  Cookie,
+  Check,
+  CreditCard,
+  Zap,
+  CheckCircle2,
+} from "lucide-react";
 import { useDashboard, type RiskNode } from "./dashboardContext";
-import { useTheme, type ThemeMode } from "./themeContext";
+import { useTheme } from "./themeContext";
 
-const positions: Record<string, { x: number; y: number }> = { "supplier:northstar": { x: 10, y: 45 }, "shipment:NS-884": { x: 205, y: 135 }, "product:pump-ax9": { x: 435, y: 45 }, "supplier:acme": { x: 225, y: 275 }, "product:hydralift-b": { x: 640, y: 185 } };
-const riskClass = (score: number) => score >= .9 ? "border-critical" : score >= .75 ? "border-warning" : "border-mint/60";
+type ActivePage = "home" | "analysis";
 
-function SupplyNode({ data, selected }: NodeProps) {
-  const node = data as unknown as RiskNode;
-  return <motion.div animate={node.risk_score >= .95 ? { boxShadow: ["0 0 0 0 rgba(255,107,107,.3)", "0 0 0 12px rgba(255,107,107,0)", "0 0 0 0 rgba(255,107,107,.3)"] } : {}} transition={{ duration: 2.4, repeat: Infinity }} className={`min-w-[144px] rounded-xl border bg-[#10231d] px-3 py-2.5 shadow-xl ${riskClass(node.risk_score)} ${selected ? "ring-2 ring-mint" : ""}`}><Handle type="target" position={Position.Left}/><span className="node-label">{node.label}</span><strong className="mt-1 block text-xs text-white">{node.name.replace(" Components", "").replace(" (Product B)", "")}</strong><small className={node.risk_score >= .9 ? "text-critical" : node.risk_score >= .75 ? "text-warning" : "text-mint"}>Risk {Math.round(node.risk_score * 100)}%</small><Handle type="source" position={Position.Right}/></motion.div>;
+export type ExtendedNode = RiskNode & {
+  frequency?: number;
+  label?: string;
+  x?: number;
+  y?: number;
+  [key: string]: unknown;
+};
+
+// --- Helper Functions for Cookie Storage ---
+function setCookie(name: string, value: string, days = 30) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
 }
-const nodeTypes = { supply: SupplyNode };
 
-const RiskRow = memo(function RiskRow({ node, index }: { node: RiskNode; index: number }) {
-  const { activeNodeId, setActiveNodeId } = useDashboard();
-  const danger = node.risk_score >= .9 ? "bg-critical" : node.risk_score >= .75 ? "bg-warning" : "bg-mint";
-  return <motion.div onMouseEnter={() => setActiveNodeId(node.id)} onMouseLeave={() => setActiveNodeId(null)} whileHover={{ x: 4 }} className={`grid grid-cols-[28px_minmax(0,1fr)_82px] items-center gap-3 border-b border-line/70 py-3 last:border-0 ${activeNodeId === node.id ? "rounded-lg bg-mint/10 px-2" : ""}`}><span className="font-mono text-[10px] text-muted">0{index + 1}</span><div className="min-w-0"><strong className="block text-xs">{node.name}</strong><small className="mt-1 block truncate text-[10px] text-muted">{node.evidence}</small></div><div><span className="text-xs font-bold">{Math.round(node.risk_score * 100)}%</span><div aria-label={`${node.name} risk score ${Math.round(node.risk_score * 100)} percent`} className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-forest"><motion.i initial={{ width: 0 }} animate={{ width: `${node.risk_score * 100}%` }} transition={{ duration: .65, delay: index * .08 }} className={`block h-full rounded-full ${danger}`}/></div></div></motion.div>;
-});
+function getCookie(name: string) {
+  return document.cookie.split("; ").reduce((r, v) => {
+    const parts = v.split("=");
+    return parts[0] === name ? decodeURIComponent(parts[1]) : r;
+  }, "");
+}
 
-function Stat({ icon, value, label, live }: { icon: ReactNode; value: string | number; label: string; live?: boolean }) { return <motion.div whileHover={{ y: -3 }} className="card p-5"><div className="mb-4 flex items-center justify-between text-mint">{icon}{live && <span className="flex items-center gap-1.5 text-[10px] text-mint"><i className="h-2 w-2 animate-live rounded-full bg-mint"/>LIVE</span>}</div><strong className="text-4xl font-bold tracking-tight text-mint">{value}</strong><span className="mt-1 block text-xs text-muted">{label}</span></motion.div> }
+// --- Custom Graph Node ---
+function MissionControlNode({ data, selected }: NodeProps) {
+  const node = data as unknown as ExtendedNode;
+  const isHighRisk = (node.risk_score || 0) >= 0.7;
 
-function App() {
-  const { nodes, edges, risks, sources, activeNodeId, setActiveNodeId, refreshDashboard } = useDashboard();
-  const { mode, setMode } = useTheme();
+  return (
+    <div
+      className={`relative px-4 py-3 rounded-xl backdrop-blur-md transition-all font-mono text-xs shadow-2xl ${
+        isHighRisk
+          ? "bg-[#1f0a0a]/90 border border-amber-500/80 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+          : "bg-[#0c121e]/90 border border-cyan-500/50 text-cyan-100 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+      } ${selected ? "ring-2 ring-violet-500 border-violet-400 scale-105" : ""}`}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!bg-cyan-400 !w-2 !h-2"
+      />
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+          {node.label || "Entity"}
+        </span>
+        <span
+          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHighRisk ? "bg-amber-950/80 text-amber-400 border border-amber-800/50" : "bg-cyan-950/80 text-cyan-300 border border-cyan-800/50"}`}
+        >
+          {Math.round((node.risk_score || 0) * 100)}% RISK
+        </span>
+      </div>
+      <div className="font-bold text-sm tracking-tight text-white">
+        {node.name}
+      </div>
+      <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
+        <span>
+          Freq: <strong className="text-white">{node.frequency || 1}</strong>
+        </span>
+        <span className="text-[9px] uppercase tracking-wider text-slate-500">
+          Node Ref #{node.id?.slice(0, 6)}
+        </span>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!bg-cyan-400 !w-2 !h-2"
+      />
+    </div>
+  );
+}
+const nodeTypes = { supply: MissionControlNode };
+
+export function App() {
+  const {
+    nodes,
+    edges,
+    risks,
+    sources,
+    activeNodeId,
+    setActiveNodeId,
+    refreshDashboard,
+  } = useDashboard();
+
+  // Navigation State
+  const [currentPage, setCurrentPage] = useState<ActivePage>("home");
+
+  // Authentication & Gate States
+  const [hasProfile, setHasProfile] = useState<boolean>(false);
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [userProfile, setUserProfile] = useState({
+    name: "",
+    email: "",
+    org: "",
+  });
+
+  // Cookie States
+  const [cookiesAccepted, setCookiesAccepted] = useState<boolean>(false);
+  const [showCookieBanner, setShowCookieBanner] = useState<boolean>(false);
+
+  // Freemium Model Tier Limits (3 free file runs)
+  const [freeRunsCount, setFreeRunsCount] = useState<number>(0);
+  const [showPaywallModal, setShowPaywallModal] = useState<boolean>(false);
+
+  // Analytical States
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [cypher, setCypher] = useState("");
   const [loading, setLoading] = useState(false);
-  const [uploadFiles, setUploadFiles] = useState<FileList | null>(null);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ file: string; status: string; analysis: string }[] | null>(null);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const graphNodes = nodes.map((node) => ({ id: node.id, type: "supply", position: positions[node.id] ?? { x: 0, y: 0 }, data: node, selected: activeNodeId === node.id }));
-  const graphEdges = edges.map((edge) => ({ id: `${edge.source}-${edge.target}`, source: edge.source, target: edge.target, label: edge.relationship, markerEnd: { type: MarkerType.ArrowClosed, color: "#5e927b" }, labelStyle: { fill: "#91d9b2", fontSize: 9, fontWeight: 700 }, labelBgStyle: { fill: "#132a23", fillOpacity: .8 } }));
-  async function askGraph() { if (!question.trim()) return; setLoading(true); await new Promise((resolve) => setTimeout(resolve, 1500)); const response = await fetch("/api/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }); const result = await response.json(); setAnswer(result.answer); setCypher(result.cypher); setLoading(false); }
+  const [isDragging, setIsDragging] = useState(false);
 
-  async function uploadSources() {
-    if (!uploadFiles?.length) return;
+  // Contact Form States
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    email: "",
+    message: "",
+  });
+  const [contactSubmitted, setContactSubmitted] = useState(false);
+
+  // Terminal Logs State
+  const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+  const [logs, setLogs] = useState<
+    Array<{
+      text: string;
+      type: "info" | "success" | "warn" | "error";
+      time: string;
+    }>
+  >([
+    {
+      text: "OmniGraph Session Engine online.",
+      type: "info",
+      time: new Date().toLocaleTimeString(),
+    },
+  ]);
+
+  const addLog = (
+    text: string,
+    type: "info" | "success" | "warn" | "error" = "info",
+  ) => {
+    setLogs((prev) => [
+      ...prev,
+      { text, type, time: new Date().toLocaleTimeString() },
+    ]);
+  };
+
+  // --- Initialize Cookies & Triggers ---
+  useEffect(() => {
+    // Check Cookies on load
+    const savedConsent = getCookie("omnigraph_cookie_consent");
+    if (savedConsent === "true") {
+      setCookiesAccepted(true);
+    } else {
+      setShowCookieBanner(true);
+    }
+
+    const savedRuns = getCookie("omnigraph_runs_count");
+    if (savedRuns) {
+      setFreeRunsCount(parseInt(savedRuns, 10));
+    }
+
+    const savedUser = getCookie("omnigraph_user_profile");
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUserProfile(parsed);
+        setHasProfile(true);
+      } catch (e) {
+        // Fallback if parsing fails
+      }
+    }
+  }, []);
+
+  // --- 5-Second Delayed Gate Trigger on Analysis Page ---
+  useEffect(() => {
+    if (currentPage === "analysis" && !hasProfile) {
+      const timer = setTimeout(() => {
+        setShowProfileModal(true);
+        addLog("Security Gate Triggered: Profile creation required.", "warn");
+      }, 5000); // Trigger after 5 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentPage, hasProfile]);
+
+  const acceptCookies = () => {
+    setCookie("omnigraph_cookie_consent", "true", 365);
+    setCookiesAccepted(true);
+    setShowCookieBanner(false);
+    addLog("Cookie preferences saved to browser storage.", "success");
+  };
+
+  const handleProfileSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userProfile.name || !userProfile.email) return;
+
+    setCookie("omnigraph_user_profile", JSON.stringify(userProfile), 30);
+    setHasProfile(true);
+    setShowProfileModal(false);
+    addLog(
+      `Profile created for ${userProfile.name}. Full access unlocked.`,
+      "success",
+    );
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      setUploadFiles((prev) => [...prev, ...droppedFiles]);
+      addLog(
+        `Staged ${droppedFiles.length} file payloads into buffer.`,
+        "info",
+      );
+    }
+  };
+
+  async function executeGraphSynthesis() {
+    if (!uploadFiles.length) return;
+
+    // Check Freemium Model Limit
+    if (freeRunsCount >= 3) {
+      setShowPaywallModal(true);
+      addLog("Freemium Limit Exceeded: Upstream license required.", "error");
+      return;
+    }
+
     setUploading(true);
-    setUploadError(null);
+    addLog(
+      "Parsing document matrices and calculating co-occurrence math...",
+      "info",
+    );
+
     const formData = new FormData();
-    Array.from(uploadFiles).forEach((file) => formData.append("files", file));
+    uploadFiles.forEach((file) => formData.append("files", file));
+
     try {
-      const response = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || data.message || "Upload failed.");
-      setUploadResult(data.uploads ?? []);
-      setUploadMessage(data.message ?? "Files uploaded successfully.");
-      setUploadFiles(null);
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error("Synthesis pipeline failure.");
+
+      const newRunCount = freeRunsCount + 1;
+      setFreeRunsCount(newRunCount);
+      setCookie("omnigraph_runs_count", newRunCount.toString(), 30);
+
+      addLog(
+        `Graph generated successfully! Free run ${newRunCount}/3 consumed.`,
+        "success",
+      );
+      setUploadFiles([]);
       await refreshDashboard();
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Upload failed.");
-      setUploadResult(null);
-      setUploadMessage(null);
+    } catch (e: any) {
+      addLog(`Pipeline Error: ${e.message}`, "error");
     } finally {
       setUploading(false);
     }
   }
 
-  const themeOptions: Array<{ value: ThemeMode; label: string }> = [
-    { value: "system", label: "System" },
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-  ];
+  async function askCopilot() {
+    if (!question.trim()) return;
+    setLoading(true);
+    addLog(`Evaluating Graph Copilot prompt: "${question}"`, "info");
 
-  const selectedFilesLabel = uploadFiles ? Array.from(uploadFiles).map((file) => file.name).join(", ") : "Choose data files";
-  return <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_80%_0%,rgba(33,88,69,.32),transparent_33%),#081c17]">
-    <nav className="sticky top-0 z-50 flex h-20 items-center justify-between border-b border-line/70 bg-forest/80 px-6 backdrop-blur-xl md:px-12"><div className="flex items-center gap-2 text-lg font-extrabold text-mint"><span className="text-3xl">◇</span> OmniGraph</div><div className="flex items-center gap-5"><span className="hidden items-center gap-2 text-xs text-[#c3d5cc] sm:flex"><i className="h-2 w-2 animate-live rounded-full bg-mint"/>System operational</span><div className="hidden items-center gap-2 rounded-full border border-line bg-[#0f2b1e]/80 px-3 py-1 text-[10px] text-muted sm:flex">
-        {themeOptions.map((option) => (
-          <button key={option.value} type="button" onClick={() => setMode(option.value)} className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${mode === option.value ? "bg-mint text-forest" : "text-muted hover:text-mint"}`}>
-            {option.label}
+    try {
+      const response = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const result = await response.json();
+      setAnswer(result.answer);
+      setCypher(result.cypher);
+      addLog("Copilot analysis completed successfully.", "success");
+    } catch (err: any) {
+      addLog(`Copilot Error: ${err.message}`, "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const activeSelectedNode = (nodes as unknown as ExtendedNode[]).find(
+    (n) => n.id === activeNodeId,
+  );
+
+  const graphNodes: FlowNode[] = (nodes as unknown as ExtendedNode[]).map(
+    (node) => ({
+      id: node.id,
+      type: "supply",
+      position: { x: node.x || 400, y: node.y || 300 },
+      data: node,
+      selected: activeNodeId === node.id,
+    }),
+  );
+
+  const graphEdges = edges.map((edge) => ({
+    id: `${edge.source}-${edge.target}`,
+    source: edge.source,
+    target: edge.target,
+    label: edge.relationship,
+    type: "simplebezier",
+    animated: true,
+    style: { stroke: "#06b6d4", strokeWidth: 1.5 },
+    labelStyle: {
+      fill: "#a7f3d0",
+      fontSize: 9,
+      fontFamily: "JetBrains Mono, monospace",
+    },
+    labelBgStyle: { fill: "#0a0a0a", fillOpacity: 0.95 },
+  }));
+
+  return (
+    <main className="min-h-screen bg-[#070709] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-300 antialiased overflow-hidden flex flex-col h-screen">
+      {/* --- GLOBAL NAVIGATION HEADER --- */}
+      <header className="h-16 border-b border-slate-800/80 bg-[#0a0a0d]/90 backdrop-blur-xl px-6 flex items-center justify-between z-40 shrink-0">
+        <div
+          className="flex items-center gap-3 cursor-pointer"
+          onClick={() => setCurrentPage("home")}
+        >
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 p-[1px] shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+            <div className="h-full w-full bg-[#0a0a0d] rounded-[11px] grid place-items-center">
+              <span className="font-mono font-black text-cyan-400 text-base">
+                O
+              </span>
+            </div>
+          </div>
+          <div className="font-mono font-black tracking-widest text-sm bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+            OMNIGRAPH
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-6 font-mono text-xs">
+          <button
+            onClick={() => setCurrentPage("home")}
+            className={`transition-colors ${currentPage === "home" ? "text-cyan-400 font-bold" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Home
           </button>
-        ))}
-      </div><span className="grid h-9 w-9 place-items-center rounded-full bg-[#d0ebcb] text-xs font-bold text-forest">GG</span></div></nav>
-    <div className="mx-auto max-w-[1440px] px-5 pb-16 pt-14 md:px-10 lg:px-14"><section className="grid items-end gap-8 lg:grid-cols-[1fr_360px]"><div><p className="eyebrow">AUTONOMOUS DATA ORCHESTRATION</p><h1 className="max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-[-.045em] sm:text-6xl">Turn dark data into <span className="text-mint">operational clarity.</span></h1><p className="mt-5 max-w-2xl text-sm leading-7 text-muted">An enterprise intelligence layer that connects supplier signals, shipment risks, and downstream product impact.</p></div><motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 3, repeat: Infinity }} className="animate-breathe rounded-2xl border border-critical/50 bg-panel p-5"><div className="flex items-start gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-mint text-forest"><Bolt size={21} fill="currentColor"/></span><div className="min-w-0 flex-1"><p className="text-[11px] text-muted">Most critical signal</p><strong className="mt-1 block text-sm">NS-884 customs hold</strong><small className="mt-1 block text-[11px] text-muted">Propagating risk to HydraLift B</small></div><b className="text-3xl text-critical">96%</b></div></motion.div></section>
-      <section className="mt-9 grid grid-cols-2 gap-3 lg:grid-cols-4"><Stat icon={<Database size={18}/>} value="3" label="Dark-data sources"/><Stat icon={<Network size={18}/>} value="5" label="Connected entities"/><Stat icon={<ShieldAlert size={18}/>} value="3" label="Critical risks"/><Stat icon={<Activity size={18}/>} value="Live" label="AI orchestration" live/></section>
-      <section className="mt-5 grid gap-5 lg:grid-cols-[1.35fr_.85fr]"><div className="card p-5"><div className="flex items-start justify-between"><div><p className="eyebrow">KNOWLEDGE GRAPH</p><h2 className="text-xl font-bold">Supply chain topology</h2></div><span className="rounded-full border border-line bg-forest px-3 py-1.5 text-[10px] text-mint"><Sparkles className="mr-1 inline" size={12}/>Offline demo</span></div><div className="mt-5 h-[390px] rounded-xl border border-line/70 bg-[#0b1915]"><ReactFlow nodes={graphNodes} edges={graphEdges} nodeTypes={nodeTypes} fitView onNodeClick={(_, node) => setActiveNodeId(node.id)} onPaneClick={() => setActiveNodeId(null)} nodesDraggable nodesConnectable={false} elementsSelectable><Background color="#1e3d32" gap={22}/><Controls showInteractive={false}/></ReactFlow></div><div className="mt-4 flex gap-5 text-[11px] text-muted"><span><i className="mr-1.5 inline-block h-2 w-2 rounded-full bg-critical"/>Critical risk</span><span><i className="mr-1.5 inline-block h-2 w-2 rounded-full bg-warning"/>Monitored</span></div></div>
-        <div className="card p-5"><div className="flex items-start justify-between"><div><p className="eyebrow">PREDICTIVE ANALYTICS</p><h2 className="text-xl font-bold">Failure risk radar</h2></div><button className="text-xs text-mint">View report →</button></div><div className="mt-4">{risks.map((node, index) => <RiskRow node={node} index={index} key={node.id}/>)}</div></div></section>
-      <section className="mt-5 rounded-2xl border border-line bg-[linear-gradient(110deg,#123429,#10231d)] p-6"><div className="grid gap-6 lg:grid-cols-[.8fr_1.4fr]"><div><p className="eyebrow">GRAPH COPILOT</p><h2 className="text-2xl font-bold">Ask your operations data.</h2><p className="mt-3 text-sm leading-6 text-muted">Trace a disruption from supplier signal to customer impact in one question.</p></div><div className="self-center"><div className="flex h-14 items-center gap-3 rounded-xl border border-mint/40 bg-forest px-4"><Search size={19} className="text-mint"/><input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => event.key === "Enter" && askGraph()} placeholder="How does the delay at NorthStar affect Product B?" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"/><button onClick={askGraph} disabled={loading} className="rounded-lg bg-mint px-4 py-2 text-xs font-extrabold text-forest transition hover:bg-white disabled:opacity-60">{loading ? "Analysing…" : "Ask graph"}</button></div>{answer && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-3 rounded-xl bg-[#0a1915] p-4"><strong className="text-xs text-mint">Impact analysis</strong><p className="mt-2 text-sm leading-6 text-[#d5e1db]">{answer}</p><code className="mt-3 block overflow-x-auto rounded-lg bg-[#07110e] p-3 text-[10px] text-[#9edec3]">{cypher}</code></motion.div>}</div></div></section>
-      <section className="mt-7 grid gap-5 lg:grid-cols-[1.35fr_.85fr]"><div className="card p-5"><div className="flex items-start justify-between"><div><p className="eyebrow">DATA UPLOAD</p><h2 className="text-xl font-bold">Upload customer data</h2><p className="mt-3 text-sm leading-6 text-muted">Upload PDF, JSON, CSV, TXT, SQLite, or DB files for analysis and downstream extraction.</p></div><span className="rounded-full border border-line bg-forest px-3 py-1.5 text-[10px] text-mint">Supports web uploads</span></div><div className="mt-5 space-y-4"><label className="block text-[11px] font-semibold uppercase tracking-[.18em] text-muted" htmlFor="upload-files">Select files</label><input id="upload-files" type="file" multiple accept=".pdf,.json,.csv,.txt,.sqlite,.db" onChange={(event) => setUploadFiles(event.target.files)} className="w-full rounded-xl border border-line bg-[#07110e] px-4 py-3 text-sm text-white outline-none" /><div className="flex flex-wrap items-center gap-3"><button onClick={uploadSources} disabled={uploading || !uploadFiles?.length} className="rounded-lg bg-mint px-4 py-2 text-xs font-extrabold text-forest transition hover:bg-white disabled:opacity-60">{uploading ? "Uploading…" : "Upload files"}</button><span className="text-[10px] text-muted">{selectedFilesLabel}</span></div>{uploadError && <div className="rounded-xl border border-critical/50 bg-[#2f1317] p-3 text-[11px] text-critical">{uploadError}</div>}{uploadMessage && <div className="rounded-xl border border-mint/40 bg-[#102a1f] p-3 text-[11px] text-mint">{uploadMessage}</div>}{uploadResult && uploadResult.length > 0 && <div className="space-y-3 pt-3"><strong className="block text-xs text-mint">Upload results</strong>{uploadResult.map((item) => <div key={item.file} className="rounded-xl border border-line/70 bg-[#081611] p-3"><div className="flex items-center justify-between gap-3"><strong className="text-sm">{item.file}</strong><span className="text-[10px] text-mint">{item.status}</span></div><p className="mt-2 text-[11px] text-muted">{item.analysis}</p></div>)}</div>}</div></div><div className="card p-5"><div className="flex items-start justify-between"><div><p className="eyebrow">THEME MODE</p><h2 className="text-xl font-bold">Dark, light, or system</h2><p className="mt-3 text-sm leading-6 text-muted">Choose the display mode that fits your workflow.</p></div><span className="rounded-full border border-line bg-forest px-3 py-1.5 text-[10px] text-mint">Current: {mode}</span></div><div className="mt-5 flex flex-wrap gap-3">{themeOptions.map((option) => (<button key={option.value} type="button" onClick={() => setMode(option.value)} className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${mode === option.value ? "bg-mint text-forest" : "border border-line bg-[#081611] text-muted hover:border-mint hover:text-white"}`}>{option.label}</button>))}</div></div></section>
-      <section className="mt-7 border-t border-line pt-6"><p className="eyebrow">INGESTION PIPELINE</p><h2 className="text-xl font-bold">Source health</h2><div className="mt-5 grid gap-3 md:grid-cols-3">{sources.map((source, index) => <motion.div whileHover={{ y: -2 }} className="card flex items-center gap-3 p-4" key={source.file}>{index === 0 ? <Database className="text-mint"/> : index === 1 ? <FileText className="text-mint"/> : <Slack className="text-mint"/>}<div className="min-w-0 flex-1"><strong className="block text-xs">{source.source}</strong><small className="mt-1 block truncate text-[10px] text-muted">{source.file}</small></div><span className="text-[10px] text-mint"><i className="mr-1.5 inline-block h-2 w-2 rounded-full bg-mint"/>{source.status}</span></motion.div>)}</div></section>
-    </div></main>;
+          <button
+            onClick={() => setCurrentPage("analysis")}
+            className={`transition-colors ${currentPage === "analysis" ? "text-cyan-400 font-bold" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Services Workspace
+          </button>
+        </div>
+
+        {/* Profile Status Badge */}
+        <div className="flex items-center gap-4 font-mono text-xs">
+          {hasProfile ? (
+            <div className="flex items-center gap-2 bg-[#11131c] border border-slate-800/80 px-3 py-1.5 rounded-xl">
+              <User size={12} className="text-cyan-400" />
+              <span className="text-slate-200 font-bold">
+                {userProfile.name}
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="bg-gradient-to-r from-cyan-500 to-violet-600 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs"
+            >
+              Create Profile
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* --- PAGE 1: PUBLIC HOME PAGE --- */}
+      {currentPage === "home" && (
+        <div className="flex-1 overflow-y-auto font-mono">
+          {/* Hero Section */}
+          <section className="max-w-5xl mx-auto px-6 py-20 text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-[#0b0e17] text-[10px] uppercase tracking-widest text-cyan-400 mb-6">
+              <Zap size={10} /> Neural Knowledge Network Platform
+            </div>
+            <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-none uppercase">
+              Transform Dark Data Into{" "}
+              <span className="bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+                Relational Topology.
+              </span>
+            </h1>
+            <p className="mt-6 text-slate-400 max-w-2xl mx-auto font-sans text-sm leading-relaxed">
+              OmniGraph ingests unstructured PDF contracts, database dumps, and
+              communication logs, computing co-occurrence frequencies to build
+              dynamic, Obsidian-style semantic webs automatically.
+            </p>
+            <div className="mt-8 flex justify-center gap-4">
+              <button
+                onClick={() => setCurrentPage("analysis")}
+                className="bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-slate-950 font-bold text-xs uppercase tracking-wider px-6 py-3.5 rounded-xl transition-all shadow-lg flex items-center gap-2"
+              >
+                Launch Services Engine <ArrowRight size={14} />
+              </button>
+            </div>
+          </section>
+
+          {/* Section: What We Do */}
+          <section className="max-w-5xl mx-auto px-6 py-12 border-t border-slate-800/80">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-8 text-center">
+              What We Do
+            </h2>
+            <div className="grid gap-6 md:grid-cols-3 font-sans text-xs">
+              <div className="bg-[#0b0e17] border border-slate-800/80 p-6 rounded-2xl">
+                <Database className="text-cyan-400 mb-3" size={20} />
+                <h3 className="font-mono font-bold text-slate-200 uppercase text-sm mb-2">
+                  1. Ingestion
+                </h3>
+                <p className="text-slate-400 leading-relaxed">
+                  Parse text streams from PDFs, JSON logs, CSVs, and SQLite
+                  database tables with zero manual preprocessing rules.
+                </p>
+              </div>
+              <div className="bg-[#0b0e17] border border-slate-800/80 p-6 rounded-2xl">
+                <Layers className="text-cyan-400 mb-3" size={20} />
+                <h3 className="font-mono font-bold text-slate-200 uppercase text-sm mb-2">
+                  2. Matrix Calculation
+                </h3>
+                <p className="text-slate-400 leading-relaxed">
+                  Extract core keywords, calculate density intersections, and
+                  build weighted relationship paths automatically.
+                </p>
+              </div>
+              <div className="bg-[#0b0e17] border border-slate-800/80 p-6 rounded-2xl">
+                <Sparkles className="text-cyan-400 mb-3" size={20} />
+                <h3 className="font-mono font-bold text-slate-200 uppercase text-sm mb-2">
+                  3. Graph Copilot
+                </h3>
+                <p className="text-slate-400 leading-relaxed">
+                  Execute conversational queries against your live data map,
+                  generating clean analytical answers and deterministic Cypher
+                  traces.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Section: Services Offered */}
+          <section className="max-w-5xl mx-auto px-6 py-12 border-t border-slate-800/80">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-8 text-center">
+              Our Capabilities & Services
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 font-mono text-xs">
+              <div className="bg-[#0b0e17] border border-slate-800/80 p-5 rounded-xl flex items-start gap-4">
+                <Activity size={18} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-slate-200">
+                    Zero-Shot Semantic Disambiguation
+                  </h4>
+                  <p className="text-slate-400 font-sans text-[11px] mt-1">
+                    Normalizes entity names across files to resolve duplicates
+                    into a single node.
+                  </p>
+                </div>
+              </div>
+              <div className="bg-[#0b0e17] border border-slate-800/80 p-5 rounded-xl flex items-start gap-4">
+                <ShieldAlert
+                  size={18}
+                  className="text-amber-400 shrink-0 mt-0.5"
+                />
+                <div>
+                  <h4 className="font-bold text-slate-200">
+                    Contextual Anomaly Calculation
+                  </h4>
+                  <p className="text-slate-400 font-sans text-[11px] mt-1">
+                    Evaluates risk metrics ($0.0$ to $1.0$) based on source
+                    evidence snippets.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Section: Contact Us */}
+          <section className="max-w-2xl mx-auto px-6 py-16 border-t border-slate-800/80 mb-20">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-2 text-center">
+              Contact Us
+            </h2>
+            <p className="text-slate-400 text-center font-sans text-xs mb-8">
+              Interested in custom enterprise integrations or dedicated cluster
+              pipelines? Send us a message.
+            </p>
+
+            {contactSubmitted ? (
+              <div className="bg-emerald-950/40 border border-emerald-800/50 p-6 rounded-2xl text-center text-emerald-400 text-xs">
+                <CheckCircle2 size={24} className="mx-auto mb-2" />
+                Thank you! Your message has been routed to our engineering team.
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setContactSubmitted(true);
+                }}
+                className="space-y-4 font-mono text-xs"
+              >
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase block mb-1">
+                    Name
+                  </label>
+                  <input
+                    required
+                    value={contactForm.name}
+                    onChange={(e) =>
+                      setContactForm({ ...contactForm, name: e.target.value })
+                    }
+                    className="w-full bg-[#0b0e17] border border-slate-800 rounded-xl p-3 text-slate-200 outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase block mb-1">
+                    Corporate Email
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    value={contactForm.email}
+                    onChange={(e) =>
+                      setContactForm({ ...contactForm, email: e.target.value })
+                    }
+                    className="w-full bg-[#0b0e17] border border-slate-800 rounded-xl p-3 text-slate-200 outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase block mb-1">
+                    Message
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={contactForm.message}
+                    onChange={(e) =>
+                      setContactForm({
+                        ...contactForm,
+                        message: e.target.value,
+                      })
+                    }
+                    className="w-full bg-[#0b0e17] border border-slate-800 rounded-xl p-3 text-slate-200 outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-cyan-500 text-slate-950 font-bold py-3.5 rounded-xl uppercase tracking-wider text-xs hover:bg-cyan-400 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Send size={12} /> Transmit Message
+                </button>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* --- PAGE 2: SERVICES & ANALYSIS WORKSPACE --- */}
+      {currentPage === "analysis" && (
+        <div className="flex-1 grid grid-cols-[240px_1fr_360px] overflow-hidden relative">
+          {/* LEFT SLENDER PANEL */}
+          <aside className="border-r border-slate-800/80 bg-[#0a0a0d]/90 backdrop-blur-md p-4 flex flex-col justify-between font-mono text-xs z-10">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2">
+                <Activity size={12} className="text-cyan-400" /> Session
+                Telemetry
+              </div>
+
+              {/* Freemium Usage Meter */}
+              <div className="bg-[#11131c] border border-slate-800/80 rounded-xl p-3 mb-6">
+                <div className="flex justify-between items-center text-[10px] text-slate-400 mb-2">
+                  <span>Free Files Synthesized</span>
+                  <span className="font-bold text-cyan-400">
+                    {freeRunsCount} / 3
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full"
+                    style={{ width: `${(freeRunsCount / 3) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-[#11131c]/50 border border-slate-800/60 rounded-lg p-2.5 flex items-center justify-between">
+                  <span className="text-slate-400 text-[11px]">
+                    Ingested Files
+                  </span>
+                  <span className="font-bold text-slate-200">
+                    {sources.length}
+                  </span>
+                </div>
+                <div className="bg-[#11131c]/50 border border-slate-800/60 rounded-lg p-2.5 flex items-center justify-between">
+                  <span className="text-slate-400 text-[11px]">
+                    Active Entities
+                  </span>
+                  <span className="font-bold text-slate-200">
+                    {nodes.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800/80 text-[10px] text-slate-500 text-center">
+              Gemini 2.0 Flash Engine Active
+            </div>
+          </aside>
+
+          {/* CENTER HERO CANVAS */}
+          <section className="relative flex-1 bg-[#050508] overflow-hidden flex flex-col">
+            {/* Header Copilot Input */}
+            <div className="p-3 bg-[#0a0a0d] border-b border-slate-800 flex items-center gap-3">
+              <Search size={16} className="text-cyan-400 shrink-0" />
+              <input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && askCopilot()}
+                placeholder="Ask Graph Copilot (e.g., 'Trace high-variance nodes')..."
+                className="w-full bg-transparent text-xs outline-none text-slate-200 font-mono"
+              />
+              <button
+                onClick={askCopilot}
+                disabled={loading}
+                className="bg-cyan-500 text-slate-950 font-mono font-bold text-[10px] uppercase px-3 py-1.5 rounded-lg shrink-0"
+              >
+                {loading ? "Calculating..." : "Query"}
+              </button>
+            </div>
+
+            {/* Answer Display */}
+            {answer && (
+              <div className="z-20 bg-[#0d111c]/95 border-b border-slate-800/80 backdrop-blur-xl p-4 font-mono text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
+                    <Sparkles size={12} /> Graph Copilot Impact Trace
+                  </span>
+                  <button
+                    onClick={() => setAnswer("")}
+                    className="text-slate-500 hover:text-slate-300"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <p className="text-slate-300 font-sans text-xs leading-relaxed">
+                  {answer}
+                </p>
+                {cypher && (
+                  <div className="mt-2 p-2 bg-[#05070f] border border-slate-800 rounded font-mono text-[10px] text-cyan-300 flex items-center justify-between">
+                    <code>{cypher}</code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(cypher)}
+                      className="text-slate-500 hover:text-cyan-400"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* React Flow Topology Frame */}
+            <div className="flex-1 relative">
+              <ReactFlow
+                nodes={graphNodes}
+                edges={graphEdges}
+                nodeTypes={nodeTypes}
+                fitView
+                onNodeClick={(_, n) => setActiveNodeId(n.id)}
+                onPaneClick={() => setActiveNodeId(null)}
+                nodesDraggable
+                nodesConnectable={false}
+                elementsSelectable
+              >
+                <Background color="#161b26" gap={24} size={1} />
+                <Controls
+                  showInteractive={false}
+                  className="!bg-[#0a0a0d] !border-slate-800 !shadow-2xl"
+                />
+              </ReactFlow>
+            </div>
+          </section>
+
+          {/* RIGHT PANEL (INSPECTOR / DROP ZONE) */}
+          <aside className="border-l border-slate-800/80 bg-[#0a0a0d]/90 backdrop-blur-md p-5 flex flex-col justify-between font-mono text-xs z-10">
+            {activeSelectedNode ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
+                    <Layers size={12} /> Context Inspector
+                  </span>
+                  <button
+                    onClick={() => setActiveNodeId(null)}
+                    className="text-slate-500 hover:text-slate-300"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <div>
+                  <label className="text-[9px] uppercase tracking-wider text-slate-500 block mb-1">
+                    Identifier
+                  </label>
+                  <div className="text-sm font-bold text-white font-sans">
+                    {activeSelectedNode.name}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[9px] uppercase tracking-wider text-slate-500 block mb-1">
+                    Quote Evidence
+                  </label>
+                  <div className="bg-[#05070f] border border-slate-800 p-3 rounded-xl text-slate-300 font-sans text-xs italic">
+                    "{activeSelectedNode.evidence || "No evidence quote found."}
+                    "
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2">
+                    <UploadCloud size={14} className="text-cyan-400" /> Smart
+                    Ingestion Zone
+                  </div>
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleFileDrop}
+                    className="border-2 border-dashed rounded-2xl p-6 text-center border-slate-800 bg-[#070a12]"
+                  >
+                    <UploadCloud
+                      size={28}
+                      className="mx-auto text-slate-500 mb-3"
+                    />
+                    <div className="font-bold text-slate-200 text-xs">
+                      Drop Data Files Here
+                    </div>
+                    <label
+                      htmlFor="workspace-file"
+                      className="mt-4 inline-block bg-[#11131c] border border-slate-800 text-slate-300 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg cursor-pointer"
+                    >
+                      Browse Files
+                    </label>
+                    <input
+                      id="workspace-file"
+                      type="file"
+                      multiple
+                      accept=".pdf,.json,.csv,.txt,.sqlite,.db"
+                      onChange={(e) =>
+                        e.target.files &&
+                        setUploadFiles(Array.from(e.target.files))
+                      }
+                      className="hidden"
+                    />
+                  </div>
+
+                  {uploadFiles.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-[9px] uppercase text-slate-500 mb-2 font-bold">
+                        Staged Files ({uploadFiles.length})
+                      </div>
+                      {uploadFiles.map((f, i) => (
+                        <div
+                          key={i}
+                          className="flex justify-between bg-[#11131c] border border-slate-800 p-2 rounded text-[10px] mb-1"
+                        >
+                          <span className="truncate text-slate-300">
+                            {f.name}
+                          </span>
+                          <button
+                            onClick={() =>
+                              setUploadFiles(
+                                uploadFiles.filter((_, idx) => idx !== i),
+                              )
+                            }
+                            className="text-slate-500 hover:text-red-400"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={executeGraphSynthesis}
+                  disabled={uploading || uploadFiles.length === 0}
+                  className="w-full mt-6 bg-gradient-to-r from-cyan-500 to-violet-600 text-slate-950 font-black text-xs uppercase py-4 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                >
+                  {uploading ? "Synthesizing..." : "⟳ SYNTHESIZE GRAPH"}
+                </button>
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {/* --- MODAL 1: MANDATORY PROFILE CREATION GATE (After 5 Secs) --- */}
+      <AnimatePresence>
+        {showProfileModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md grid place-items-center p-4"
+          >
+            <div className="bg-[#0c0f1d] border border-cyan-500/50 p-8 rounded-2xl max-w-md w-full shadow-[0_0_30px_rgba(6,182,212,0.2)] font-mono">
+              <div className="text-center mb-6">
+                <div className="h-12 w-12 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/50 grid place-items-center mx-auto mb-3">
+                  <User size={20} />
+                </div>
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">
+                  Establish User Profile
+                </h3>
+                <p className="text-slate-400 font-sans text-xs mt-1">
+                  Create your profile to unlock continuous workspace graph
+                  parsing.
+                </p>
+              </div>
+              <form
+                onSubmit={handleProfileSubmit}
+                className="space-y-4 text-xs"
+              >
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase block mb-1">
+                    Full Name
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={userProfile.name}
+                    onChange={(e) =>
+                      setUserProfile({ ...userProfile, name: e.target.value })
+                    }
+                    className="w-full bg-[#05070f] border border-slate-800 rounded-xl p-3 text-slate-200 outline-none focus:border-cyan-500"
+                    placeholder="e.g. Garvit Joshi"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase block mb-1">
+                    Corporate Email
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    value={userProfile.email}
+                    onChange={(e) =>
+                      setUserProfile({ ...userProfile, email: e.target.value })
+                    }
+                    className="w-full bg-[#05070f] border border-slate-800 rounded-xl p-3 text-slate-200 outline-none focus:border-cyan-500"
+                    placeholder="garvit@lpu.in"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-cyan-500 text-slate-950 font-bold py-3.5 rounded-xl uppercase tracking-wider text-xs hover:bg-cyan-400 transition-colors"
+                >
+                  Instantiate Profile & Access Workspace
+                </button>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- MODAL 2: FREEMIUM PAYWALL GATE (Triggered after 3 runs) --- */}
+      <AnimatePresence>
+        {showPaywallModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md grid place-items-center p-4"
+          >
+            <div className="bg-[#0c0f1d] border border-violet-500/50 p-8 rounded-2xl max-w-md w-full shadow-[0_0_30px_rgba(139,92,246,0.3)] font-mono text-center">
+              <div className="h-12 w-12 rounded-full bg-violet-950 text-violet-400 border border-violet-800/50 grid place-items-center mx-auto mb-3">
+                <CreditCard size={20} />
+              </div>
+              <h3 className="text-base font-bold text-white uppercase tracking-wider">
+                Free Limit Consumed
+              </h3>
+              <p className="text-slate-400 font-sans text-xs mt-2 leading-relaxed">
+                You have reached your 3-file free synthesis limit. Upgrade to{" "}
+                <strong className="text-violet-400">OmniGraph Premium</strong>{" "}
+                for uncapped file parsing and persistent storage.
+              </p>
+              <div className="my-6 bg-[#05070f] border border-slate-800 p-4 rounded-xl text-left font-sans text-xs space-y-2">
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check size={14} className="text-cyan-400" /> Infinite Dynamic
+                  Graph Builds
+                </div>
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Check size={14} className="text-cyan-400" /> Multi-Agent
+                  Cypher Execution Loops
+                </div>
+              </div>
+              <button
+                onClick={() =>
+                  alert("Redirecting to Stripe payment gateway...")
+                }
+                className="w-full bg-gradient-to-r from-violet-600 to-cyan-500 text-slate-950 font-bold py-3.5 rounded-xl uppercase tracking-wider text-xs"
+              >
+                Scale Infrastructure Tier ($49/mo)
+              </button>
+              <button
+                onClick={() => setShowPaywallModal(false)}
+                className="mt-3 text-[10px] text-slate-500 hover:text-slate-300 uppercase"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- COOKIE CONSENT BANNER --- */}
+      <AnimatePresence>
+        {showCookieBanner && (
+          <motion.div
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 50, opacity: 0 }}
+            className="fixed bottom-14 left-6 right-6 z-40 max-w-2xl mx-auto bg-[#0c0f1d]/95 border border-cyan-500/40 p-4 rounded-2xl backdrop-blur-xl shadow-2xl font-mono text-xs flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3">
+              <Cookie size={20} className="text-cyan-400 shrink-0" />
+              <p className="text-slate-300 font-sans text-xs leading-normal">
+                We use browser cookies to persist your session profile,
+                analytical graph run balances, and workspace state.
+              </p>
+            </div>
+            <button
+              onClick={acceptCookies}
+              className="bg-cyan-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shrink-0 hover:bg-cyan-400 transition-colors"
+            >
+              Accept Cookies
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- BOTTOM LOGS TERMINAL DRAWER --- */}
+      <footer className="border-t border-slate-800/80 bg-[#07070a] z-30 shrink-0 font-mono text-xs">
+        <div className="px-4 py-2 bg-[#0a0a0d] border-b border-slate-800/60 flex items-center justify-between text-[10px] text-slate-400">
+          <div className="flex items-center gap-2">
+            <Terminal size={12} className="text-cyan-400" />
+            <span className="font-bold uppercase tracking-wider text-slate-300">
+              Engine Live Terminal
+            </span>
+          </div>
+          <button
+            onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+            className="text-slate-500 hover:text-slate-300 flex items-center gap-1"
+          >
+            {isTerminalOpen ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronUp size={14} />
+            )}
+          </button>
+        </div>
+        {isTerminalOpen && (
+          <div className="p-3 h-24 overflow-y-auto font-mono text-[11px] space-y-1 bg-[#050508]">
+            {logs.map((log, i) => (
+              <div key={i} className="flex items-baseline gap-3">
+                <span className="text-slate-600 text-[9px] shrink-0">
+                  {log.time}
+                </span>
+                <span
+                  className={
+                    log.type === "success"
+                      ? "text-emerald-400"
+                      : log.type === "error"
+                        ? "text-red-400"
+                        : log.type === "warn"
+                          ? "text-amber-400"
+                          : "text-slate-300"
+                  }
+                >
+                  {log.type === "success" && "✔ "}
+                  {log.type === "error" && "✖ "}
+                  {log.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </footer>
+    </main>
+  );
 }
+
 export default App;
